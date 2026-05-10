@@ -16,6 +16,7 @@
 #include "var_table.h"
 #include "expr_parser.h"
 #include "sprites.h"
+#include "ti_platform.h"
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -96,9 +97,9 @@ class TokenParser
 public:
   TokenParser()
     : m_expr(&m_vars),
-      m_printChar(NULL),
-      m_printString(NULL),
-      m_clearScreen(NULL)
+      m_printChar(tiPrintChar),
+      m_printString(tiPrintString),
+      m_clearScreen(tiClearScreen)
   {
   }
 
@@ -773,8 +774,14 @@ private:
   CmdDeleteFn m_cmdDelete = NULL;
   CmdContinueFn m_cmdContinue = NULL;
 
-  SpriteDrawFn  m_spriteDraw  = NULL;
-  SpriteEraseFn m_spriteErase = NULL;
+  // Graphics / sprite / input platform hooks default to the weak no-op
+  // tiXxx symbols defined in ti_platform.cpp. A project provides strong
+  // overrides with the same name to plug in real hardware behavior.
+  // setSpriteCallbacks / setReadKey / etc. still work as before for
+  // backward compatibility, but new code should use the strong-tiXxx
+  // pattern instead.
+  SpriteDrawFn  m_spriteDraw  = tiSpriteDraw;
+  SpriteEraseFn m_spriteErase = tiSpriteErase;
   SetThrottleFn m_setThrottle = NULL;
   ImageLookupFn m_imageLookup = NULL;
 
@@ -786,16 +793,16 @@ private:
   FileSeekRecFn  m_fileSeekRec  = NULL;
   FileRewindFn   m_fileRewind   = NULL;
 
-  SetCharFn m_setChar = NULL;
-  GetCharFn m_getChar = NULL;
-  SetScreenColorFn m_setScreenColor = NULL;
-  SetCharColorFn m_setCharColor = NULL;
-  SetCharPatternFn m_setCharPattern = NULL;
-  GetCharPatternFn m_getCharPattern = NULL;
-  ResetCharsetFn   m_resetCharset   = NULL;
-  ReadKeyFn m_readKey = NULL;
-  ReadJoystickFn m_readJoystick = NULL;
-  MoveCursorFn m_moveCursor = NULL;
+  SetCharFn        m_setChar        = tiSetChar;
+  GetCharFn        m_getChar        = tiGetChar;
+  SetScreenColorFn m_setScreenColor = tiSetScreenColor;
+  SetCharColorFn   m_setCharColor   = tiSetCharColor;
+  SetCharPatternFn m_setCharPattern = tiSetCharPattern;
+  GetCharPatternFn m_getCharPattern = tiGetCharPattern;
+  ResetCharsetFn   m_resetCharset   = tiResetCharset;
+  ReadKeyFn        m_readKey        = tiReadKey;
+  ReadJoystickFn   m_readJoystick   = tiReadJoystick;
+  MoveCursorFn     m_moveCursor     = tiMoveCursor;
   NextDataFn m_nextData = NULL;
   ResetDataFn m_resetData = NULL;
 
@@ -2655,13 +2662,15 @@ private:
       // anything.
       if (tokens[*pos] == TOK_LPAREN) (*pos)++;
       int duration = (int)m_expr.evalNumeric(tokens, pos);
+      int freqs[4] = {0, 0, 0, 0};
+      int vols[4]  = {30, 30, 30, 30};   // 30 = silent
       int voices = 0;
       while (tokens[*pos] == TOK_COMMA && voices < 4)
       {
         (*pos)++;
-        m_expr.evalNumeric(tokens, pos);   // frequency — ignored for now
+        freqs[voices] = (int)m_expr.evalNumeric(tokens, pos);
         if (tokens[*pos] == TOK_COMMA) (*pos)++;
-        m_expr.evalNumeric(tokens, pos);   // volume   — ignored for now
+        vols[voices]  = (int)m_expr.evalNumeric(tokens, pos);
         voices++;
       }
       if (tokens[*pos] == TOK_RPAREN) (*pos)++;
@@ -2679,12 +2688,18 @@ private:
           delay(10);
           now = millis();
         }
+        tiSoundStop();
+        tiSoundPlay(absDur, freqs[0], vols[0], freqs[1], vols[1],
+                            freqs[2], vols[2], freqs[3], vols[3]);
         m_soundEndTime = now + (unsigned long)absDur;
       }
       else
       {
         // Negative duration cancels in-flight sound and schedules
         // the new one; return immediately.
+        tiSoundStop();
+        tiSoundPlay(absDur, freqs[0], vols[0], freqs[1], vols[1],
+                            freqs[2], vols[2], freqs[3], vols[3]);
         m_soundEndTime = millis() + (unsigned long)absDur;
       }
       return resp;
