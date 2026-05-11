@@ -125,11 +125,11 @@ private:
       int peekLen = peekIdent(tokens, *pos, fname, sizeof(fname));
       bool isFunctionCall = (tokens[*pos + peekLen] == TOK_LPAREN);
 
-      // User-defined string function? Name must start with "FN" and end
-      // with "$" (fnIsStr=true in the stored definition).
-      if (isFunctionCall && peekLen >= 3 &&
-          (fname[0] == 'F' || fname[0] == 'f') &&
-          (fname[1] == 'N' || fname[1] == 'n') &&
+      // User-defined string function? Name ends with "$" (TI's marker for
+      // string-returning identifiers). TI Extended BASIC accepts any name
+      // for DEF — the "FN" prefix is a Microsoft/GW-BASIC convention that
+      // does not apply here.
+      if (isFunctionCall && peekLen >= 2 &&
           fname[peekLen - 1] == '$')
       {
         FnDef* fn = m_vars->findFn(fname, peekLen);
@@ -509,10 +509,12 @@ private:
         return (float)random(0, 32767) / 32767.0f;
       }
 
-      // DEF FN user-defined function? Name must start with "FN".
-      if (isFunctionCall && peekLen >= 2 &&
-          (fname[0] == 'F' || fname[0] == 'f') &&
-          (fname[1] == 'N' || fname[1] == 'n'))
+      // User-defined function call. TI Extended BASIC accepts any name
+      // for DEF (e.g. DEF M(X)=...), so we look up by the bare identifier
+      // — no "FN" prefix required. If the name isn't a registered DEF,
+      // fall through and the caller treats it as an array reference or
+      // an undefined variable.
+      if (isFunctionCall)
       {
         FnDef* fn = m_vars->findFn(fname, peekLen);
         if (fn != NULL)
