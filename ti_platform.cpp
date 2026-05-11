@@ -38,6 +38,9 @@ __attribute__((weak)) void tiReadJoystick(int /*unit*/, int* outX, int* outY)
   if (outY) *outY = 0;
 }
 
+__attribute__((weak)) void tiPair()   {}
+__attribute__((weak)) void tiUnpair() {}
+
 __attribute__((weak)) void tiSoundPlay(int /*duration*/,
                                        int /*f1*/, int /*v1*/,
                                        int /*f2*/, int /*v2*/,

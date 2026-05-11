@@ -55,6 +55,17 @@ int  tiReadKey();                                     // -1 == no key
 void tiReadJoystick(int unit, int* outX, int* outY);  // each in {-4, 0, +4}
 
 // ---------------------------------------------------------------------------
+// BLE pairing — CALL PAIR / CALL UNPAIR
+// ---------------------------------------------------------------------------
+// CALL PAIR — open a 30-second pairing window so a new BLE HID device
+// can join. Default no-op; projects with a BLE HID host override this
+// with their own pairing trigger (e.g., BleHidHost::requestPairingMode).
+void tiPair();
+// CALL UNPAIR — forget every currently-bonded BLE HID peer. Default
+// no-op; the host project routes this to its own NVS-clearing path.
+void tiUnpair();
+
+// ---------------------------------------------------------------------------
 // Sound — CALL SOUND
 // ---------------------------------------------------------------------------
 // CALL SOUND(duration, f1, v1 [, f2, v2 [, f3, v3 [, f4, v4]]]).

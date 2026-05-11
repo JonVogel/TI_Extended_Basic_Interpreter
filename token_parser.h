@@ -2641,6 +2641,28 @@ private:
       return resp;
     }
 
+    if (strcasecmp(subName, "PAIR") == 0)
+    {
+      // CALL PAIR — open a 30-second BLE-HID pairing window. Non-TI
+      // extension (real TI never had Bluetooth) but useful on the ESP32
+      // ports for triggering pairing without leaving BASIC. Accepts an
+      // optional empty () for syntactic consistency with other CALLs.
+      if (tokens[*pos] == TOK_LPAREN) (*pos)++;
+      if (tokens[*pos] == TOK_RPAREN) (*pos)++;
+      tiPair();
+      return resp;
+    }
+
+    if (strcasecmp(subName, "UNPAIR") == 0)
+    {
+      // CALL UNPAIR — forget every currently-bonded BLE HID peer. Non-TI
+      // extension. Useful for clearing stale bonds without a reflash.
+      if (tokens[*pos] == TOK_LPAREN) (*pos)++;
+      if (tokens[*pos] == TOK_RPAREN) (*pos)++;
+      tiUnpair();
+      return resp;
+    }
+
     if (strcasecmp(subName, "SOUND") == 0)
     {
       // CALL SOUND(duration, freq1, vol1 [, freq2, vol2, freq3, vol3,
