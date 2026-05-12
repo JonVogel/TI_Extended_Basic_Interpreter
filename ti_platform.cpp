@@ -26,6 +26,7 @@ __attribute__((weak)) void tiSetCharPattern(int /*charCode*/,
 __attribute__((weak)) void tiGetCharPattern(int /*charCode*/,
                                             uint8_t* /*bytes*/) {}
 __attribute__((weak)) void tiResetCharset() {}
+__attribute__((weak)) void tiSetCharsetMode(int /*mode*/) {}
 __attribute__((weak)) void tiMoveCursor(int /*row*/, int /*col*/) {}
 
 __attribute__((weak)) void tiSpriteDraw(int /*slot*/) {}

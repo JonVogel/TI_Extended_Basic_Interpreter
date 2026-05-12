@@ -34,6 +34,9 @@ typedef void (*SetCharColorFn)(int charSet, int fg, int bg);
 typedef void (*SetCharPatternFn)(int charCode, const uint8_t* pattern8);
 typedef void (*GetCharPatternFn)(int charCode, uint8_t* out8);
 typedef void (*ResetCharsetFn)();
+// CALL CHARSET("PC" | "TI") — switch the active font ROM. Mode values match
+// the TiFontMode enum (0 = PC default, 1 = TI authentic).
+typedef void (*SetCharsetModeFn)(int mode);
 typedef int  (*ReadKeyFn)();           // returns 0 = no key, else char code
 // CALL JOYST(unit, X, Y) — fills X and Y with -4 / 0 / +4 axis state.
 typedef void (*ReadJoystickFn)(int unit, int* outX, int* outY);
@@ -142,6 +145,7 @@ public:
   void setMoveCursor(MoveCursorFn mc) { m_moveCursor = mc; }
   void setGetCharPattern(GetCharPatternFn fn) { m_getCharPattern = fn; }
   void setResetCharset(ResetCharsetFn fn)     { m_resetCharset   = fn; }
+  void setSetCharsetMode(SetCharsetModeFn fn) { m_setCharsetMode = fn; }
 
   void setCmdSize(CmdSizeFn f)   { m_cmdSize = f; }
   void setCmdTrace(CmdTraceFn f) { m_cmdTrace = f; }
@@ -800,6 +804,7 @@ private:
   SetCharPatternFn m_setCharPattern = tiSetCharPattern;
   GetCharPatternFn m_getCharPattern = tiGetCharPattern;
   ResetCharsetFn   m_resetCharset   = tiResetCharset;
+  SetCharsetModeFn m_setCharsetMode = tiSetCharsetMode;
   ReadKeyFn        m_readKey        = tiReadKey;
   ReadJoystickFn   m_readJoystick   = tiReadJoystick;
   MoveCursorFn     m_moveCursor     = tiMoveCursor;
@@ -2145,6 +2150,31 @@ private:
     {
       // CALL CHARSET — reset chars 32-127 to their ROM default patterns.
       // Leaves user-defined graphics chars (128+) alone.
+      //
+      // Non-TI extension: `CALL CHARSET("PC")` and `CALL CHARSET("TI")`
+      // switch the active font ROM before resetting. "PC" is the default
+      // simulator font; "TI" is the V9T9-derived authentic TI-99/4A font
+      // (lowercase shows as small caps). The host persists the choice.
+      if (tokens[*pos] == TOK_LPAREN)
+      {
+        (*pos)++;
+        if (tokens[*pos] == TOK_QUOTED_STR || tokens[*pos] == TOK_STRING_LIT)
+        {
+          (*pos)++;
+          int slen = tokens[*pos];
+          (*pos)++;
+          char arg[8];
+          int n = (slen < (int)sizeof(arg) - 1) ? slen : (int)sizeof(arg) - 1;
+          for (int i = 0; i < n; i++) arg[i] = (char)tokens[(*pos) + i];
+          arg[n] = '\0';
+          (*pos) += slen;
+          int mode = -1;
+          if      (strcasecmp(arg, "PC") == 0) mode = 0;
+          else if (strcasecmp(arg, "TI") == 0) mode = 1;
+          if (mode >= 0 && m_setCharsetMode) m_setCharsetMode(mode);
+        }
+        if (tokens[*pos] == TOK_RPAREN) (*pos)++;
+      }
       if (m_resetCharset) m_resetCharset();
       return resp;
     }

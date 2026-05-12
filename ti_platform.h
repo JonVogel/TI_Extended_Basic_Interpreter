@@ -40,6 +40,11 @@ void tiSetCharColor(int set, int fg, int bg);         // CALL COLOR
 void tiSetCharPattern(int charCode, const uint8_t* bytes);   // CALL CHAR
 void tiGetCharPattern(int charCode, uint8_t* bytes);
 void tiResetCharset();
+// CALL CHARSET("PC" | "TI") — switch the default font ROM the simulator
+// uses for chars 32-127. Host should persist the selection (e.g. NVS) and
+// refresh `charPatterns[]` before the next CALL CHARSET (which actually
+// reloads 32-127). Mode values match the TiFontMode enum in ti_font.h.
+void tiSetCharsetMode(int mode);
 void tiMoveCursor(int row, int col);                  // DISPLAY AT
 
 // ---------------------------------------------------------------------------
