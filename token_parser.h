@@ -2757,6 +2757,89 @@ private:
       return resp;
     }
 
+    if (strcasecmp(subName, "SAY") == 0)
+    {
+      // CALL SAY([word-string] [, phrase-string])
+      //
+      // Speaks vocabulary words named in word-string (space-separated),
+      // then any pre-fetched LPC phrase in phrase-string. Either arg may
+      // be omitted (leading comma skips the word-string).
+      //
+      //   CALL SAY("HELLO TEXAS INSTRUMENTS")
+      //   CALL SPGET("HELLO", P$) :: CALL SAY(, P$)
+      //   CALL SAY("READY", P$)
+      //
+      // Default weak hook is a no-op; the host wires a real TMS5220
+      // synth to the I²S audio mixer.
+      char wordBuf[128];
+      uint8_t phraseBuf[256];
+      int phraseLen = 0;
+      wordBuf[0] = '\0';
+      bool haveWords = false;
+      bool havePhrase = false;
+      if (tokens[*pos] == TOK_LPAREN) (*pos)++;
+      if (tokens[*pos] != TOK_COMMA && tokens[*pos] != TOK_RPAREN &&
+          tokens[*pos] != TOK_EOL && tokens[*pos] != TOK_COLON)
+      {
+        m_expr.evalString(tokens, pos, wordBuf, sizeof(wordBuf));
+        haveWords = (wordBuf[0] != '\0');
+      }
+      if (tokens[*pos] == TOK_COMMA)
+      {
+        (*pos)++;
+        char tmp[256];
+        m_expr.evalString(tokens, pos, tmp, sizeof(tmp));
+        int slen = (int)strlen(tmp);
+        if (slen > 0 && slen <= (int)sizeof(phraseBuf))
+        {
+          memcpy(phraseBuf, tmp, slen);
+          phraseLen = slen;
+          havePhrase = true;
+        }
+      }
+      if (tokens[*pos] == TOK_RPAREN) (*pos)++;
+      tiSay(haveWords ? wordBuf : NULL,
+            havePhrase ? phraseBuf : NULL, phraseLen);
+      return resp;
+    }
+
+    if (strcasecmp(subName, "SPGET") == 0)
+    {
+      // CALL SPGET(word-string, phrase-variable$)
+      //
+      // Looks up word in the speech ROM vocabulary and stores its LPC
+      // byte sequence in the supplied string variable so the program can
+      // pass it back to CALL SAY (the trick most TI speech demos rely on
+      // for splicing / pitch-modifying phrases).
+      //
+      // Known limitation: our string storage is null-terminated, so any
+      // 0x00 byte inside the LPC phrase truncates the result here. Real
+      // TI strings are length-prefixed and bit-clean. To be addressed
+      // when the synth lands and we know whether real phrases ever
+      // contain interior nulls.
+      if (tokens[*pos] == TOK_LPAREN) (*pos)++;
+      char word[32];
+      m_expr.evalString(tokens, pos, word, sizeof(word));
+      if (tokens[*pos] == TOK_COMMA) (*pos)++;
+      if (isIdentStart(tokens[*pos]))
+      {
+        char vname[MAX_VAR_NAME];
+        bool vIsStr;
+        int vlen = parseIdent(tokens, pos, vname, sizeof(vname), &vIsStr);
+        if (vIsStr)
+        {
+          uint8_t buf[256];
+          int n = tiSpget(word, buf, sizeof(buf) - 1);
+          if (n < 0) n = 0;
+          if (n >= (int)sizeof(buf)) n = sizeof(buf) - 1;
+          buf[n] = 0;
+          m_vars.setStr(vname, vlen, (const char*)buf);
+        }
+      }
+      if (tokens[*pos] == TOK_RPAREN) (*pos)++;
+      return resp;
+    }
+
     if (strcasecmp(subName, "VERSION") == 0)
     {
       // CALL VERSION(numeric-variable) — returns the Extended BASIC

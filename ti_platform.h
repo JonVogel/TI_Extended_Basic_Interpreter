@@ -94,4 +94,27 @@ void tiSoundPlay(int duration,
                  int freq4, int vol4);
 void tiSoundStop();
 
+// ---------------------------------------------------------------------------
+// Speech — CALL SAY / CALL SPGET
+// ---------------------------------------------------------------------------
+// CALL SAY [(wordStr [, phraseStr])]
+//   wordStr   : space-separated vocabulary word names ("HELLO TEXAS"),
+//               or NULL when only a phrase is supplied.
+//   phraseBytes/phraseLen : pre-fetched LPC byte string from CALL SPGET,
+//                           or NULL/0 when speaking words only.
+// Both may be supplied together; the words speak first, then the phrase.
+// Default weak: no-op. The host overrides with a real TMS5220 synth
+// driving the existing I²S audio mixer (PolyBLEP / SN76489 path).
+void tiSay(const char* wordStr,
+           const uint8_t* phraseBytes, int phraseLen);
+
+// CALL SPGET(word$, phrase$)
+//   word     : ASCII word to look up in the speech ROM vocabulary.
+//   outBuf   : caller-provided buffer to receive the LPC byte sequence.
+//   bufSize  : capacity of outBuf in bytes.
+// Returns the number of bytes written (0 .. bufSize), or 0 if the word
+// is not in the vocabulary. Real TI speech phrases run 30-200 bytes;
+// a 256-byte buffer is plenty.
+int  tiSpget(const char* word, uint8_t* outBuf, int bufSize);
+
 #endif // TI_PLATFORM_H

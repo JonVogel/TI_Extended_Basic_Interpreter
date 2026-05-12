@@ -48,3 +48,12 @@ __attribute__((weak)) void tiSoundPlay(int /*duration*/,
                                        int /*f3*/, int /*v3*/,
                                        int /*f4*/, int /*v4*/) {}
 __attribute__((weak)) void tiSoundStop() {}
+
+__attribute__((weak)) void tiSay(const char* /*wordStr*/,
+                                 const uint8_t* /*phraseBytes*/,
+                                 int /*phraseLen*/) {}
+__attribute__((weak)) int  tiSpget(const char* /*word*/,
+                                   uint8_t* /*outBuf*/, int /*bufSize*/)
+{
+  return 0;
+}
