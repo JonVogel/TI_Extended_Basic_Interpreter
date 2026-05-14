@@ -216,12 +216,19 @@ public:
       return;
     }
 
-    if (v->strIndex >= 0 && v->strIndex < m_strCount)
+    // If the variable already owns a slot, reuse it in place rather
+    // than allocating a fresh one — otherwise every reassignment grows
+    // m_strCount and the pool fills up after MAX_STRINGS unique writes
+    // (e.g. a FOR/READ loop reading ~200 DATA values into one var hits
+    // the cap even though only one variable is live).
+    if (v->strIndex >= 0 && v->strIndex < MAX_STRINGS)
     {
-      free(m_strings[v->strIndex]);
-      m_strings[v->strIndex] = NULL;
+      if (m_strings[v->strIndex]) free(m_strings[v->strIndex]);
+      int len = (int)strlen(val);
+      m_strings[v->strIndex] = (char*)malloc(len + 1);
+      if (m_strings[v->strIndex]) strcpy(m_strings[v->strIndex], val);
+      return;
     }
-
     v->strIndex = allocString(val);
   }
 
@@ -337,11 +344,16 @@ public:
     if (off < 0 || !v->arrayData) return;
 
     int* arr = (int*)v->arrayData;
-    // Free old string at this slot
-    if (arr[off] >= 0 && arr[off] < m_strCount)
+    // Same in-place-reuse logic as scalar setStr — without this, a
+    // FOR/READ loop into an array element would leak a slot per write
+    // and saturate MAX_STRINGS after ~200 reassignments.
+    if (arr[off] >= 0 && arr[off] < MAX_STRINGS)
     {
-      free(m_strings[arr[off]]);
-      m_strings[arr[off]] = NULL;
+      if (m_strings[arr[off]]) free(m_strings[arr[off]]);
+      int len = (int)strlen(val);
+      m_strings[arr[off]] = (char*)malloc(len + 1);
+      if (m_strings[arr[off]]) strcpy(m_strings[arr[off]], val);
+      return;
     }
     arr[off] = allocString(val);
   }
