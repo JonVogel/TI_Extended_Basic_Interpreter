@@ -1700,7 +1700,18 @@ private:
 
     if (tokens[*pos] == TOK_HASH) (*pos)++;
     int unit = (int)m_expr.evalNumeric(tokens, pos);
-    if (tokens[*pos] == TOK_COLON) (*pos)++;
+    // TI Extended BASIC requires colon between unit and spec:
+    //   OPEN #n:"DEVICE.NAME"[,attrs...]
+    // Reject anything else as a syntax error rather than silently
+    // passing an empty spec into the file layer and surfacing it as
+    // a confusing I/O ERROR 01 at runtime.
+    if (tokens[*pos] != TOK_COLON)
+    {
+      resp.result = TP_ERROR;
+      snprintf(resp.errorMsg, sizeof(resp.errorMsg), "INCORRECT STATEMENT");
+      return resp;
+    }
+    (*pos)++;
 
     char spec[64] = "";
     m_expr.evalString(tokens, pos, spec, sizeof(spec));
