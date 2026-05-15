@@ -57,3 +57,14 @@ __attribute__((weak)) int  tiSpget(const char* /*word*/,
 {
   return 0;
 }
+
+__attribute__((weak)) void tiSetVolume(int /*n*/) {}
+__attribute__((weak)) void tiGetVolume(int* out)
+{
+  if (out) *out = 15;
+}
+__attribute__((weak)) void tiSetSpeechVolume(int /*n*/) {}
+__attribute__((weak)) void tiGetSpeechVolume(int* out)
+{
+  if (out) *out = 15;
+}

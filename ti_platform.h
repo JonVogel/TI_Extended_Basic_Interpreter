@@ -117,4 +117,25 @@ void tiSay(const char* wordStr,
 // a 256-byte buffer is plenty.
 int  tiSpget(const char* word, uint8_t* outBuf, int bufSize);
 
+// ---------------------------------------------------------------------------
+// Audio volume — CALL VOLUME / CALL GETVOLUME / CALL SPVOL / CALL GETSPVOL
+// ---------------------------------------------------------------------------
+// Non-TI extensions. Real TI hardware had no software volume control;
+// these expose runtime trim of the host's mixer/codec so users on
+// hardware without physical knobs (like the ESP32-S3-Box-3) can adjust.
+// All four use the SN76489 0..30 scale (0 = loudest, 30 = silent).
+//
+//   tiSetVolume(n)        : master output (typically codec DAC).
+//   tiGetVolume(out)      : read current master into *out.
+//   tiSetSpeechVolume(n)  : speech-mixer-only attenuator.
+//   tiGetSpeechVolume(out): read current speech volume into *out.
+//
+// Default weak: tiSet* are no-ops; tiGet* fill *out with 15 (midpoint).
+// The host project supplies strong overrides that route to its codec
+// registers / mixer multiplier and persist to NVS.
+void tiSetVolume(int n);
+void tiGetVolume(int* out);
+void tiSetSpeechVolume(int n);
+void tiGetSpeechVolume(int* out);
+
 #endif // TI_PLATFORM_H

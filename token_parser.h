@@ -2693,6 +2693,81 @@ private:
       return resp;
     }
 
+    if (strcasecmp(subName, "VOLUME") == 0)
+    {
+      // CALL VOLUME(n) — set master output volume. Non-TI extension; the
+      // real TI Speech Synthesizer cartridge and the TI-99/4A console had
+      // no volume control. On the Box-3 there's no physical knob either,
+      // so this is the BASIC-level handle on the codec's DAC attenuator.
+      //   n: 0 (loudest) to 30 (silent), matches CALL SOUND's vol scale.
+      // Persisted to NVS by the host's tiSetVolume implementation.
+      if (tokens[*pos] == TOK_LPAREN) (*pos)++;
+      int n = (int)m_expr.evalNumeric(tokens, pos);
+      if (tokens[*pos] == TOK_RPAREN) (*pos)++;
+      if (n < 0) n = 0;
+      if (n > 30) n = 30;
+      tiSetVolume(n);
+      return resp;
+    }
+
+    if (strcasecmp(subName, "GETVOLUME") == 0)
+    {
+      // CALL GETVOLUME(V) — read current master volume into V (0..30 scale).
+      if (tokens[*pos] == TOK_LPAREN) (*pos)++;
+      char vname[MAX_VAR_NAME] = "";
+      int vlen = 0;
+      if (isIdentStart(tokens[*pos]))
+      {
+        bool vIsStr;
+        vlen = parseIdent(tokens, pos, vname, sizeof(vname), &vIsStr);
+      }
+      if (tokens[*pos] == TOK_RPAREN) (*pos)++;
+      if (vlen > 0)
+      {
+        int v = 15;
+        tiGetVolume(&v);
+        m_vars.setNum(vname, vlen, (float)v);
+      }
+      return resp;
+    }
+
+    if (strcasecmp(subName, "SPVOL") == 0)
+    {
+      // CALL SPVOL(n) — set speech-synth-only mixer volume. Non-TI
+      // extension; same 0..30 scale as CALL VOLUME but attenuates only
+      // the TMS5220 voice, not CALL SOUND tones. Useful for keeping
+      // speech quiet over loud background music or boosting it relative
+      // to other audio. Persisted to NVS.
+      if (tokens[*pos] == TOK_LPAREN) (*pos)++;
+      int n = (int)m_expr.evalNumeric(tokens, pos);
+      if (tokens[*pos] == TOK_RPAREN) (*pos)++;
+      if (n < 0) n = 0;
+      if (n > 30) n = 30;
+      tiSetSpeechVolume(n);
+      return resp;
+    }
+
+    if (strcasecmp(subName, "GETSPVOL") == 0)
+    {
+      // CALL GETSPVOL(V) — read current speech volume into V (0..30 scale).
+      if (tokens[*pos] == TOK_LPAREN) (*pos)++;
+      char vname[MAX_VAR_NAME] = "";
+      int vlen = 0;
+      if (isIdentStart(tokens[*pos]))
+      {
+        bool vIsStr;
+        vlen = parseIdent(tokens, pos, vname, sizeof(vname), &vIsStr);
+      }
+      if (tokens[*pos] == TOK_RPAREN) (*pos)++;
+      if (vlen > 0)
+      {
+        int v = 15;
+        tiGetSpeechVolume(&v);
+        m_vars.setNum(vname, vlen, (float)v);
+      }
+      return resp;
+    }
+
     if (strcasecmp(subName, "SOUND") == 0)
     {
       // CALL SOUND(duration, freq1, vol1 [, freq2, vol2, freq3, vol3,
