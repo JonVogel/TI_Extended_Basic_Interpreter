@@ -2756,6 +2756,72 @@ private:
       return resp;
     }
 
+    if (strcasecmp(subName, "WIFI") == 0)
+    {
+      // CALL WIFI                  — print current status line
+      // CALL WIFI(ssid$, pass$)    — store creds + connect
+      // CALL WIFI("forget")        — clear creds + disconnect
+      // Non-TI extension. Real TI had no WiFi.
+      auto putLine = [&](const char* s) {
+        if (m_printString)
+        {
+          m_printString(s);
+          m_printString("\n");
+        }
+      };
+
+      if (tokens[*pos] != TOK_LPAREN)
+      {
+        char line[96];
+        tiWifiStatus(line, sizeof(line));
+        putLine(line);
+        return resp;
+      }
+      (*pos)++;   // past LPAREN
+
+      char arg1[80] = {0};
+      m_expr.evalString(tokens, pos, arg1, sizeof(arg1));
+
+      if (tokens[*pos] == TOK_RPAREN)
+      {
+        // Single-string form. "forget" / "on" / "off" are recognized
+        // verbs; anything else falls back to status (we don't store
+        // a single-arg SSID with no password).
+        (*pos)++;
+        if (strcasecmp(arg1, "forget") == 0)
+        {
+          tiWifiForget();
+          putLine("WIFI: credentials cleared");
+        }
+        else if (strcasecmp(arg1, "off") == 0)
+        {
+          tiWifiOff();
+          putLine("WIFI: off");
+        }
+        else if (strcasecmp(arg1, "on") == 0)
+        {
+          tiWifiOn();
+          putLine("WIFI: on");
+        }
+        else
+        {
+          char line[96];
+          tiWifiStatus(line, sizeof(line));
+          putLine(line);
+        }
+        return resp;
+      }
+
+      // Two-string form: ssid, pass.
+      if (tokens[*pos] == TOK_COMMA) (*pos)++;
+      char arg2[80] = {0};
+      m_expr.evalString(tokens, pos, arg2, sizeof(arg2));
+      if (tokens[*pos] == TOK_RPAREN) (*pos)++;
+      tiWifiSet(arg1, arg2);
+      putLine("WIFI: credentials stored; connecting");
+      return resp;
+    }
+
     if (strcasecmp(subName, "SOUND") == 0)
     {
       // CALL SOUND(duration, freq1, vol1 [, freq2, vol2, freq3, vol3,

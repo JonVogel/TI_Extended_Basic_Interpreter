@@ -117,4 +117,28 @@ void tiSay(const char* wordStr,
 // a 256-byte buffer is plenty.
 int  tiSpget(const char* word, uint8_t* outBuf, int bufSize);
 
+// ---------------------------------------------------------------------------
+// WiFi — CALL WIFI
+// ---------------------------------------------------------------------------
+// CALL WIFI                            — print current status
+// CALL WIFI(ssid$, pass$)              — set credentials, persist, connect
+// CALL WIFI("forget")                  — clear credentials, disconnect
+//
+// Non-TI extension. Defaults are weak no-ops; the host project routes
+// these to its WiFi manager (e.g., the ESP32-S3 STA stack with NVS-backed
+// credentials).
+//
+// tiWifiStatus fills `out` with a one-line summary suitable for printing
+// at the BASIC prompt. Format is host-defined; default puts "OFFLINE".
+void tiWifiSet(const char* ssid, const char* pass);
+void tiWifiForget();
+void tiWifiStatus(char* out, int outSize);
+// Toggle the radio without losing stored credentials.
+//   tiWifiOff(): disconnect + WiFi.mode(WIFI_OFF). Stops the HTTP server
+//                and prevents reconnect-induced flash writes / display
+//                glitches while still leaving creds in NVS for later.
+//   tiWifiOn():  re-enable radio and reconnect using stored creds.
+void tiWifiOff();
+void tiWifiOn();
+
 #endif // TI_PLATFORM_H
