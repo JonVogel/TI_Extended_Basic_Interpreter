@@ -12,6 +12,7 @@
 // symbol and link-time strong/weak resolution does what we want.
 
 #include "ti_platform.h"
+#include <cstdio>
 
 __attribute__((weak)) void tiPrintChar(char /*c*/) {}
 __attribute__((weak)) void tiPrintString(const char* /*s*/) {}
@@ -68,3 +69,12 @@ __attribute__((weak)) void tiGetSpeechVolume(int* out)
 {
   if (out) *out = 15;
 }
+
+__attribute__((weak)) void tiWifiSet(const char* /*ssid*/, const char* /*pass*/) {}
+__attribute__((weak)) void tiWifiForget() {}
+__attribute__((weak)) void tiWifiStatus(char* out, int outSize)
+{
+  if (out && outSize > 0) snprintf(out, outSize, "OFFLINE");
+}
+__attribute__((weak)) void tiWifiOff() {}
+__attribute__((weak)) void tiWifiOn()  {}

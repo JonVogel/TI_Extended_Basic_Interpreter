@@ -72,7 +72,10 @@ typedef bool (*ImageLookupFn)(uint16_t lineNum, const char** outStr,
                               int* outLen);
 
 // File I/O callbacks — thin shims over file_io.h. Return 0 on success,
-// non-zero on error; errorMsgOut optional (may be NULL).
+// or a TI Extended BASIC two-digit I/O error code (0..7, see
+// fio::TIIoError) on failure. The shim is responsible for translating
+// the underlying filesystem error to the appropriate TI code; the
+// interpreter never sees raw fio return values.
 typedef int (*FileOpenFn)(int unit, const char* spec, int mode,
                           int flags, int recLen);
 // File flag bits — must mirror fio::OF_* in file_io.h.
@@ -194,6 +197,8 @@ public:
     m_onErrorLine   = 0;
     m_onWarningMode = OW_PRINT;
     m_lastErrorLine = 0;
+    m_pendingIOError = -1;
+    m_lastIOError    = 0;
     m_soundEndTime  = 0;
   }
 
@@ -205,6 +210,23 @@ public:
   uint16_t      lastErrorLine() const { return m_lastErrorLine; }
   void setLastErrorLine(uint16_t ln) { m_lastErrorLine = ln; }
   void disarmOnError() { m_onErrorMode = OE_STOP; m_onErrorLine = 0; }
+
+  // I/O error reporting. void-returning statement executors (execPrint
+  // for PRINT #n, execInputFile for INPUT/LINPUT #n) can't surface a
+  // TPResponse, so they stash a pending TI I/O error code here. The
+  // statement-dispatch loop in processLine() checks this after each
+  // statement and promotes it to TP_ERROR, which flows through the
+  // existing ON ERROR / CALL ERR machinery in ExecManager.
+  //   `tiCode` is one of the fio::TIIoError values (0..7).
+  void raiseIOError(int tiCode)
+  {
+    m_pendingIOError = tiCode;
+    m_lastIOError = tiCode;
+  }
+  int  lastIOError() const { return m_lastIOError; }
+  bool hasPendingIOError() const { return m_pendingIOError >= 0; }
+  int  pendingIOError() const { return m_pendingIOError; }
+  void clearPendingIOError() { m_pendingIOError = -1; }
 
   // Process a full line of tokens. Returns flow control decision.
   TPResponse processLine(const uint8_t* tokens, int length,
@@ -229,6 +251,20 @@ public:
         snprintf(resp.errorMsg, sizeof(resp.errorMsg), "%s",
                  m_expr.errorMsg());
         m_expr.clearError();
+        return resp;
+      }
+
+      // File I/O raised a TI I/O error during the previous statement —
+      // promote it to a line-level TP_ERROR. The two-digit code (per TI
+      // Extended BASIC convention) is preserved in m_lastIOError so
+      // CALL ERR can report it inside an ON ERROR handler.
+      if (hasPendingIOError())
+      {
+        int code = pendingIOError();
+        clearPendingIOError();
+        resp.result = TP_ERROR;
+        snprintf(resp.errorMsg, sizeof(resp.errorMsg),
+                 "I/O ERROR %02d", code);
         return resp;
       }
 
@@ -743,6 +779,13 @@ private:
   OnWarningMode m_onWarningMode = OW_PRINT;
   uint16_t      m_lastErrorLine = 0;   // for CALL ERR
 
+  // Pending I/O error: set by void-returning file I/O sites (raiseIOError),
+  // consumed and cleared by the statement-dispatch loop. -1 = no error.
+  int m_pendingIOError = -1;
+  // Last I/O error code surfaced — survives the dispatch consume so CALL
+  // ERR(...) can report it after the ON ERROR handler runs.
+  int m_lastIOError = 0;
+
   // CALL SOUND schedule — millis() past which the current (stub) sound
   // is finished. Positive-duration CALL SOUND waits for this before
   // scheduling the new one.
@@ -1044,7 +1087,8 @@ private:
 
     if (m_filePrint)
     {
-      m_filePrint(unit, out);
+      int rc = m_filePrint(unit, out);
+      if (rc != 0) raiseIOError(rc);
     }
   }
 
@@ -1656,7 +1700,18 @@ private:
 
     if (tokens[*pos] == TOK_HASH) (*pos)++;
     int unit = (int)m_expr.evalNumeric(tokens, pos);
-    if (tokens[*pos] == TOK_COLON) (*pos)++;
+    // TI Extended BASIC requires colon between unit and spec:
+    //   OPEN #n:"DEVICE.NAME"[,attrs...]
+    // Reject anything else as a syntax error rather than silently
+    // passing an empty spec into the file layer and surfacing it as
+    // a confusing I/O ERROR 01 at runtime.
+    if (tokens[*pos] != TOK_COLON)
+    {
+      resp.result = TP_ERROR;
+      snprintf(resp.errorMsg, sizeof(resp.errorMsg), "INCORRECT STATEMENT");
+      return resp;
+    }
+    (*pos)++;
 
     char spec[64] = "";
     m_expr.evalString(tokens, pos, spec, sizeof(spec));
@@ -1716,14 +1771,16 @@ private:
     if (!m_fileOpen)
     {
       resp.result = TP_ERROR;
-      snprintf(resp.errorMsg, sizeof(resp.errorMsg), "I/O ERROR");
+      snprintf(resp.errorMsg, sizeof(resp.errorMsg), "I/O ERROR 02");
+      m_lastIOError = 2;
       return resp;
     }
     int err = m_fileOpen(unit, spec, mode, flags, recLen);
     if (err != 0)
     {
       resp.result = TP_ERROR;
-      snprintf(resp.errorMsg, sizeof(resp.errorMsg), "FILE ERROR");
+      snprintf(resp.errorMsg, sizeof(resp.errorMsg), "I/O ERROR %02d", err);
+      m_lastIOError = err;
       return resp;
     }
     return resp;
@@ -2211,9 +2268,10 @@ private:
     if (strcasecmp(subName, "ERR") == 0)
     {
       // CALL ERR(err-num, severity, code, line) — returns info about the
-      // last error caught by ON ERROR. Stub: we don't classify errors
-      // yet, so err-num/severity/code are 0 and line is the line where
-      // the last error occurred.
+      // last error caught by ON ERROR. We classify only I/O errors today,
+      // so err-num is the TI I/O code (0..7), severity is 1 (recoverable
+      // I/O) when an I/O error has occurred and 0 otherwise, code mirrors
+      // err-num, and line is the line where the last error occurred.
       if (tokens[*pos] == TOK_LPAREN) (*pos)++;
       const char* names[4] = {"", "", "", ""};
       char buf[4][MAX_VAR_NAME];
@@ -2230,7 +2288,12 @@ private:
         if (tokens[*pos] == TOK_COMMA) (*pos)++;
       }
       if (tokens[*pos] == TOK_RPAREN) (*pos)++;
-      float vals[4] = {0, 0, 0, (float)m_lastErrorLine};
+      float vals[4] = {
+        (float)m_lastIOError,
+        (m_lastIOError > 0) ? 1.0f : 0.0f,
+        (float)m_lastIOError,
+        (float)m_lastErrorLine
+      };
       for (int i = 0; i < 4; i++)
       {
         if (lens[i] > 0) m_vars.setNum(names[i], lens[i], vals[i]);
@@ -2768,6 +2831,72 @@ private:
       return resp;
     }
 
+    if (strcasecmp(subName, "WIFI") == 0)
+    {
+      // CALL WIFI                  — print current status line
+      // CALL WIFI(ssid$, pass$)    — store creds + connect
+      // CALL WIFI("forget")        — clear creds + disconnect
+      // Non-TI extension. Real TI had no WiFi.
+      auto putLine = [&](const char* s) {
+        if (m_printString)
+        {
+          m_printString(s);
+          m_printString("\n");
+        }
+      };
+
+      if (tokens[*pos] != TOK_LPAREN)
+      {
+        char line[96];
+        tiWifiStatus(line, sizeof(line));
+        putLine(line);
+        return resp;
+      }
+      (*pos)++;   // past LPAREN
+
+      char arg1[80] = {0};
+      m_expr.evalString(tokens, pos, arg1, sizeof(arg1));
+
+      if (tokens[*pos] == TOK_RPAREN)
+      {
+        // Single-string form. "forget" / "on" / "off" are recognized
+        // verbs; anything else falls back to status (we don't store
+        // a single-arg SSID with no password).
+        (*pos)++;
+        if (strcasecmp(arg1, "forget") == 0)
+        {
+          tiWifiForget();
+          putLine("WIFI: credentials cleared");
+        }
+        else if (strcasecmp(arg1, "off") == 0)
+        {
+          tiWifiOff();
+          putLine("WIFI: off");
+        }
+        else if (strcasecmp(arg1, "on") == 0)
+        {
+          tiWifiOn();
+          putLine("WIFI: on");
+        }
+        else
+        {
+          char line[96];
+          tiWifiStatus(line, sizeof(line));
+          putLine(line);
+        }
+        return resp;
+      }
+
+      // Two-string form: ssid, pass.
+      if (tokens[*pos] == TOK_COMMA) (*pos)++;
+      char arg2[80] = {0};
+      m_expr.evalString(tokens, pos, arg2, sizeof(arg2));
+      if (tokens[*pos] == TOK_RPAREN) (*pos)++;
+      tiWifiSet(arg1, arg2);
+      putLine("WIFI: credentials stored; connecting");
+      return resp;
+    }
+
     if (strcasecmp(subName, "SOUND") == 0)
     {
       // CALL SOUND(duration, freq1, vol1 [, freq2, vol2, freq3, vol3,
@@ -3255,7 +3384,11 @@ private:
     line[0] = '\0';
     if (m_fileReadLine)
     {
-      m_fileReadLine(unit, line, sizeof(line));
+      int rc = m_fileReadLine(unit, line, sizeof(line));
+      // rc == 2 is the file_io EOF sentinel — that becomes "I/O ERROR 04"
+      // (past-EOF) in TI terms, but only if the program tries to read
+      // beyond EOF without checking EOF() first. The shim translates.
+      if (rc != 0) raiseIOError(rc);
     }
 
     // LINPUT: first variable gets the full line (if string); extra vars
