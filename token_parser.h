@@ -560,8 +560,15 @@ public:
         case TOK_SAVE:
         {
           pos++;
-          char filename[32] = "PROGRAM";
-          extractFilename(tokens, &pos, filename, sizeof(filename));
+          char filename[32] = "";
+          if (!extractFilename(tokens, &pos, filename, sizeof(filename)))
+          {
+            // TI-faithful: SAVE requires a quoted filename literal.
+            // SAVE FOO (unquoted) is a syntax error on real TI BASIC.
+            resp.result = TP_ERROR;
+            snprintf(resp.errorMsg, sizeof(resp.errorMsg), "INCORRECT STATEMENT");
+            return resp;
+          }
           if (m_cmdSave) m_cmdSave(filename);
           return resp;
         }
@@ -569,8 +576,13 @@ public:
         case TOK_OLD:
         {
           pos++;
-          char filename[32] = "PROGRAM";
-          extractFilename(tokens, &pos, filename, sizeof(filename));
+          char filename[32] = "";
+          if (!extractFilename(tokens, &pos, filename, sizeof(filename)))
+          {
+            resp.result = TP_ERROR;
+            snprintf(resp.errorMsg, sizeof(resp.errorMsg), "INCORRECT STATEMENT");
+            return resp;
+          }
           if (m_cmdOld) m_cmdOld(filename);
           return resp;
         }
@@ -578,8 +590,13 @@ public:
         case TOK_MERGE:
         {
           pos++;
-          char filename[32] = "PROGRAM";
-          extractFilename(tokens, &pos, filename, sizeof(filename));
+          char filename[32] = "";
+          if (!extractFilename(tokens, &pos, filename, sizeof(filename)))
+          {
+            resp.result = TP_ERROR;
+            snprintf(resp.errorMsg, sizeof(resp.errorMsg), "INCORRECT STATEMENT");
+            return resp;
+          }
           if (m_cmdMerge) m_cmdMerge(filename);
           return resp;
         }
@@ -588,7 +605,12 @@ public:
         {
           pos++;
           char filename[32] = "";
-          extractFilename(tokens, &pos, filename, sizeof(filename));
+          if (!extractFilename(tokens, &pos, filename, sizeof(filename)))
+          {
+            resp.result = TP_ERROR;
+            snprintf(resp.errorMsg, sizeof(resp.errorMsg), "INCORRECT STATEMENT");
+            return resp;
+          }
           if (m_cmdDelete) m_cmdDelete(filename);
           return resp;
         }
@@ -854,10 +876,18 @@ private:
   NextDataFn m_nextData = NULL;
   ResetDataFn m_resetData = NULL;
 
-  // Extract filename from tokens (string literal or identifier)
-  void extractFilename(const uint8_t* tokens, int* pos, char* buf, int bufSize)
+  // Extract a filename from the token stream for SAVE / OLD / MERGE /
+  // DELETE. TI BASIC requires filenames to be quoted string literals
+  // (e.g. SAVE "DSK1.PROG"). We follow that: only TOK_STRING_LIT or
+  // TOK_QUOTED_STR are accepted. Unquoted bare names are rejected
+  // because the tokenizer treats them as identifiers, which strips
+  // dots and uppercases letters — making any device-prefixed name
+  // (FLASH.X, SDCARD.X, DSK1.X) impossible to spell. Returns true on
+  // success, false if no quoted string was found at the current
+  // position (caller raises * INCORRECT STATEMENT).
+  bool extractFilename(const uint8_t* tokens, int* pos, char* buf, int bufSize)
   {
-    if (tokens[*pos] == TOK_QUOTED_STR || tokens[*pos] == TOK_UNQUOTED_STR)
+    if (tokens[*pos] == TOK_QUOTED_STR)
     {
       (*pos)++;
       int slen = tokens[*pos];
@@ -866,12 +896,12 @@ private:
       memcpy(buf, &tokens[*pos], copyLen);
       buf[copyLen] = '\0';
       *pos += slen;
+      return true;
     }
-    else if (isIdentStart(tokens[*pos]))
-    {
-      bool isStr;
-      parseIdent(tokens, pos, buf, bufSize, &isStr);
-    }
+    // Anything else — bare identifier, number, missing argument —
+    // is a syntax error. Don't try to interpret it.
+    buf[0] = '\0';
+    return false;
   }
 
   // Current cursor column (for PRINT comma tab stops)
