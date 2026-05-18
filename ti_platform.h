@@ -24,6 +24,20 @@
 #include <stdint.h>
 
 // ---------------------------------------------------------------------------
+// Cooperative yield — every long-running loop in the interpreter, file
+// I/O, and graphics layers calls this so the host OS can schedule its
+// other tasks (FreeRTOS IDLE, BLE host, WiFi, etc.).
+//
+// IMPORTANT: this must do MORE than Arduino's yield() / FreeRTOS
+// taskYIELD(), which only switch among same-or-higher-priority tasks.
+// To let the lowest-priority IDLE task run (so it can reset the task
+// watchdog), the host's strong override should block the caller for
+// at least one tick — e.g. `delay(1)` on Arduino, vTaskDelay(1) on
+// raw FreeRTOS. Default weak: no-op.
+// ---------------------------------------------------------------------------
+void tiYield();
+
+// ---------------------------------------------------------------------------
 // Console output
 // ---------------------------------------------------------------------------
 void tiPrintChar(char c);

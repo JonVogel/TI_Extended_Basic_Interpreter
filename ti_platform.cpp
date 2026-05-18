@@ -14,6 +14,8 @@
 #include "ti_platform.h"
 #include <cstdio>
 
+__attribute__((weak)) void tiYield() {}
+
 __attribute__((weak)) void tiPrintChar(char /*c*/) {}
 __attribute__((weak)) void tiPrintString(const char* /*s*/) {}
 __attribute__((weak)) void tiClearScreen() {}

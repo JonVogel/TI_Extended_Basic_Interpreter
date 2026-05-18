@@ -16,6 +16,7 @@
 
 #include "tp_types.h"
 #include "token_parser.h"
+#include "ti_platform.h"   // tiYield() — host's cooperative-yield primitive
 #include <Arduino.h>
 
 // Forward declaration for display output
@@ -490,7 +491,7 @@ public:
           delayMicroseconds(m_throttleUs);
         }
       }
-      yield();  // Prevent watchdog timeout
+      tiYield();  // Real yield: blocks 1 tick so IDLE can run + reset WDT
     }
 
     if (!m_running || lineIdx >= m_programSize)
@@ -790,7 +791,7 @@ private:
               if (m_throttleUs >= 1000) delay(m_throttleUs / 1000);
               else                      delayMicroseconds(m_throttleUs);
             }
-            yield();
+            tiYield();
           }
           return currentIdx + 1;
         }
