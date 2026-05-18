@@ -560,8 +560,15 @@ public:
         case TOK_SAVE:
         {
           pos++;
-          char filename[32] = "PROGRAM";
-          extractFilename(tokens, &pos, filename, sizeof(filename));
+          char filename[32] = "";
+          if (!extractFilename(tokens, &pos, filename, sizeof(filename)))
+          {
+            // TI-faithful: SAVE requires a quoted filename literal.
+            // SAVE FOO (unquoted) is a syntax error on real TI BASIC.
+            resp.result = TP_ERROR;
+            snprintf(resp.errorMsg, sizeof(resp.errorMsg), "INCORRECT STATEMENT");
+            return resp;
+          }
           if (m_cmdSave) m_cmdSave(filename);
           return resp;
         }
@@ -569,8 +576,13 @@ public:
         case TOK_OLD:
         {
           pos++;
-          char filename[32] = "PROGRAM";
-          extractFilename(tokens, &pos, filename, sizeof(filename));
+          char filename[32] = "";
+          if (!extractFilename(tokens, &pos, filename, sizeof(filename)))
+          {
+            resp.result = TP_ERROR;
+            snprintf(resp.errorMsg, sizeof(resp.errorMsg), "INCORRECT STATEMENT");
+            return resp;
+          }
           if (m_cmdOld) m_cmdOld(filename);
           return resp;
         }
@@ -578,8 +590,13 @@ public:
         case TOK_MERGE:
         {
           pos++;
-          char filename[32] = "PROGRAM";
-          extractFilename(tokens, &pos, filename, sizeof(filename));
+          char filename[32] = "";
+          if (!extractFilename(tokens, &pos, filename, sizeof(filename)))
+          {
+            resp.result = TP_ERROR;
+            snprintf(resp.errorMsg, sizeof(resp.errorMsg), "INCORRECT STATEMENT");
+            return resp;
+          }
           if (m_cmdMerge) m_cmdMerge(filename);
           return resp;
         }
@@ -588,7 +605,12 @@ public:
         {
           pos++;
           char filename[32] = "";
-          extractFilename(tokens, &pos, filename, sizeof(filename));
+          if (!extractFilename(tokens, &pos, filename, sizeof(filename)))
+          {
+            resp.result = TP_ERROR;
+            snprintf(resp.errorMsg, sizeof(resp.errorMsg), "INCORRECT STATEMENT");
+            return resp;
+          }
           if (m_cmdDelete) m_cmdDelete(filename);
           return resp;
         }
@@ -854,10 +876,18 @@ private:
   NextDataFn m_nextData = NULL;
   ResetDataFn m_resetData = NULL;
 
-  // Extract filename from tokens (string literal or identifier)
-  void extractFilename(const uint8_t* tokens, int* pos, char* buf, int bufSize)
+  // Extract a filename from the token stream for SAVE / OLD / MERGE /
+  // DELETE. TI BASIC requires filenames to be quoted string literals
+  // (e.g. SAVE "DSK1.PROG"). We follow that: only TOK_STRING_LIT or
+  // TOK_QUOTED_STR are accepted. Unquoted bare names are rejected
+  // because the tokenizer treats them as identifiers, which strips
+  // dots and uppercases letters — making any device-prefixed name
+  // (FLASH.X, SDCARD.X, DSK1.X) impossible to spell. Returns true on
+  // success, false if no quoted string was found at the current
+  // position (caller raises * INCORRECT STATEMENT).
+  bool extractFilename(const uint8_t* tokens, int* pos, char* buf, int bufSize)
   {
-    if (tokens[*pos] == TOK_QUOTED_STR || tokens[*pos] == TOK_UNQUOTED_STR)
+    if (tokens[*pos] == TOK_QUOTED_STR)
     {
       (*pos)++;
       int slen = tokens[*pos];
@@ -866,12 +896,12 @@ private:
       memcpy(buf, &tokens[*pos], copyLen);
       buf[copyLen] = '\0';
       *pos += slen;
+      return true;
     }
-    else if (isIdentStart(tokens[*pos]))
-    {
-      bool isStr;
-      parseIdent(tokens, pos, buf, bufSize, &isStr);
-    }
+    // Anything else — bare identifier, number, missing argument —
+    // is a syntax error. Don't try to interpret it.
+    buf[0] = '\0';
+    return false;
   }
 
   // Current cursor column (for PRINT comma tab stops)
@@ -2753,6 +2783,81 @@ private:
       if (tokens[*pos] == TOK_LPAREN) (*pos)++;
       if (tokens[*pos] == TOK_RPAREN) (*pos)++;
       tiUnpair();
+      return resp;
+    }
+
+    if (strcasecmp(subName, "VOLUME") == 0)
+    {
+      // CALL VOLUME(n) — set master output volume. Non-TI extension; the
+      // real TI Speech Synthesizer cartridge and the TI-99/4A console had
+      // no volume control. On the Box-3 there's no physical knob either,
+      // so this is the BASIC-level handle on the codec's DAC attenuator.
+      //   n: 0 (loudest) to 30 (silent), matches CALL SOUND's vol scale.
+      // Persisted to NVS by the host's tiSetVolume implementation.
+      if (tokens[*pos] == TOK_LPAREN) (*pos)++;
+      int n = (int)m_expr.evalNumeric(tokens, pos);
+      if (tokens[*pos] == TOK_RPAREN) (*pos)++;
+      if (n < 0) n = 0;
+      if (n > 30) n = 30;
+      tiSetVolume(n);
+      return resp;
+    }
+
+    if (strcasecmp(subName, "GETVOLUME") == 0)
+    {
+      // CALL GETVOLUME(V) — read current master volume into V (0..30 scale).
+      if (tokens[*pos] == TOK_LPAREN) (*pos)++;
+      char vname[MAX_VAR_NAME] = "";
+      int vlen = 0;
+      if (isIdentStart(tokens[*pos]))
+      {
+        bool vIsStr;
+        vlen = parseIdent(tokens, pos, vname, sizeof(vname), &vIsStr);
+      }
+      if (tokens[*pos] == TOK_RPAREN) (*pos)++;
+      if (vlen > 0)
+      {
+        int v = 15;
+        tiGetVolume(&v);
+        m_vars.setNum(vname, vlen, (float)v);
+      }
+      return resp;
+    }
+
+    if (strcasecmp(subName, "SPVOL") == 0)
+    {
+      // CALL SPVOL(n) — set speech-synth-only mixer volume. Non-TI
+      // extension; same 0..30 scale as CALL VOLUME but attenuates only
+      // the TMS5220 voice, not CALL SOUND tones. Useful for keeping
+      // speech quiet over loud background music or boosting it relative
+      // to other audio. Persisted to NVS.
+      if (tokens[*pos] == TOK_LPAREN) (*pos)++;
+      int n = (int)m_expr.evalNumeric(tokens, pos);
+      if (tokens[*pos] == TOK_RPAREN) (*pos)++;
+      if (n < 0) n = 0;
+      if (n > 30) n = 30;
+      tiSetSpeechVolume(n);
+      return resp;
+    }
+
+    if (strcasecmp(subName, "GETSPVOL") == 0)
+    {
+      // CALL GETSPVOL(V) — read current speech volume into V (0..30 scale).
+      if (tokens[*pos] == TOK_LPAREN) (*pos)++;
+      char vname[MAX_VAR_NAME] = "";
+      int vlen = 0;
+      if (isIdentStart(tokens[*pos]))
+      {
+        bool vIsStr;
+        vlen = parseIdent(tokens, pos, vname, sizeof(vname), &vIsStr);
+      }
+      if (tokens[*pos] == TOK_RPAREN) (*pos)++;
+      if (vlen > 0)
+      {
+        int v = 15;
+        tiGetSpeechVolume(&v);
+        m_vars.setNum(vname, vlen, (float)v);
+      }
       return resp;
     }
 
